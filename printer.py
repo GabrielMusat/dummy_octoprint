@@ -16,6 +16,7 @@ status = {
             "error": False,
             "finishing": False,
             "operational": False,
+            "printing": False,
             "paused": False,
             "pausing": False,
             "ready": False,
@@ -102,32 +103,35 @@ class Printer:
         return 204
 
     def print_file(self, file: str) -> int:
-        if self.status.get(["state", "text", "Closed"]):
+        if self.status.get(["state", "text"]) == "Closed":
             return 409
         if not os.path.isfile(os.path.join(self.path, "uploads", file)):
             return 404
 
         self.job.set(["job", "file", "name"], file)
-        self.job.set(["job", "progress"], 0)
+        self.job.set(["progress", "completion"], 0)
         self.job.set(["state"], "Printing")
+        self.status.set(["state", "flags", "printing"], True)
         self.status.set(["state", "text"], "Printing")
         self.status.set(["state", "flags", "operational"], False)
 
         async def nested():
             while True:
-                if self.status.get(["state", "text"]) == "Cancelling" or self.job.get(["job", "progress"]) >= 100:
+                if self.status.get(["state", "text"]) == "Cancelling" or self.job.get(["progress", "completion"]) >= 100:
                     if self.status.get(["state", "text"]) == "Cancelling":
                         await asyncio.sleep(5)
                     self.job.set(["job", "file", "name"], None)
-                    self.job.set(["job", "progress"], None)
+                    self.job.set(["progress", "completion"], None)
+                    self.status.set(["state", "flags", "printing"], False)
                     self.job.set(["state"], "Operational")
                     self.status.set(["state", "text"], "Operational")
                     self.status.set(["state", "flags", "operational"], True)
                     break
-                self.job.set(["job", "progress"], self.job.get(["job", "progress"])+1)
+                self.job.set(["progress", "completion"], self.job.get(["progress", "completion"])+1)
                 await asyncio.sleep(0.1)
 
         asyncio.get_event_loop().create_task(nested())
+        return 204
 
     def cancel_print(self):
         if self.status.get(["state", "text"]) != "Printing":
